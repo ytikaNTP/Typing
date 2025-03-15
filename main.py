@@ -38,7 +38,7 @@ def send_static(path):
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
     return response
 
 def compress_image(file):
@@ -51,7 +51,7 @@ def compress_image(file):
         output.seek(0)
         return output
     except Exception as e:
-        logger.error(f"Image error: {e}")
+        logger.error(f"Ошибка обработки изображения: {str(e)}")
         return None
 
 async def async_send_to_telegram(data, files):
@@ -81,14 +81,12 @@ async def async_send_to_telegram(data, files):
         messages_ids = []
         for chat_id in ADMIN_CHAT_IDS:
             try:
-                # Отправка текстового сообщения
                 message = await bot.send_message(
                     chat_id=chat_id,
                     text=message_text,
                     parse_mode='HTML'
                 )
                 
-                # Отправка изображений
                 media_messages = []
                 if compressed_images:
                     media = [InputMediaPhoto(img) for img in compressed_images]
@@ -97,13 +95,11 @@ async def async_send_to_telegram(data, files):
                         media=media
                     )
 
-                # Сохранение информации о сообщении
                 message_data[str(message.message_id)] = {
                     'media_ids': [m.message_id for m in media_messages],
                     'chat_id': chat_id
                 }
 
-                # Добавление кнопок
                 await bot.edit_message_reply_markup(
                     chat_id=chat_id,
                     message_id=message.message_id,
@@ -161,14 +157,14 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
                 bot = app.bot
                 data = message_data[message_id]
                 
-                # Удаление медиафайлов
+                # Удаление медиа
                 for media_id in data['media_ids']:
                     await bot.delete_message(
                         chat_id=data['chat_id'],
                         message_id=media_id
                     )
                 
-                # Удаление основного сообщения (исправленная секция)
+                # Удаление основного сообщения
                 await bot.delete_message(
                     chat_id=data['chat_id'],
                     message_id=int(message_id)
@@ -190,24 +186,25 @@ async def save_handler():
         form_data = request.form
         files = request.files.getlist('images')
         
-        # Валидация обязательных полей
         required_fields = ['name', 'phone', 'contact', 'product_url']
         if not all(form_data.get(field) for field in required_fields):
             return jsonify({
                 'success': False,
-                'error': 'Все обязательные поля должны быть заполнены'
+                'error': 'Заполните все обязательные поля'
             }), 400
+        
+        logger.info(f"Получен запрос от: {form_data.get('name')}")
         
         result = await async_send_to_telegram(form_data, files)
         
         return jsonify({
             'success': bool(result),
-            'message': 'Сообщение успешно отправлено' if result else 'Ошибка отправки',
-            'error': None if result else 'Ошибка при отправке в Telegram'
-        }), 200 if result else 500
+            'message': 'Тикет успешно создан!',
+            'error': None
+        }), 200
         
     except Exception as e:
-        logger.error(f"Ошибка сервера: {str(e)}")
+        logger.error(f"Ошибка обработки запроса: {str(e)}")
         return jsonify({
             'success': False,
             'error': 'Внутренняя ошибка сервера'
@@ -226,7 +223,7 @@ async def run_bot():
     await application.start()
     await application.updater.start_polling()
     
-    logger.info("Telegram бот запущен")
+    logger.info("🤖 Telegram бот запущен")
     while True:
         await asyncio.sleep(3600)
 
@@ -234,7 +231,7 @@ async def run_web():
     config = Config()
     config.bind = ["0.0.0.0:3000"]
     await serve(app, config)
-    logger.info("Веб-сервер запущен на порту 3000")
+    logger.info("🌐 Веб-сервер запущен на порту 3000")
 
 async def main():
     await asyncio.gather(
@@ -249,4 +246,4 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Сервер остановлен")
+        logger.info("🚫 Сервер остановлен")

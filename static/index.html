@@ -536,17 +536,17 @@
                 if (!response.ok) throw new Error('Ошибка сервера');
                 const result = await response.json();
 
-                if (result.success) {
-                    currentStep++;
-                    updateProgress();
-                    updateButtons();
-                    showStep(currentStep);
-                } else {
+                if (!result.success) {
                     alert(result.error || 'Ошибка при сохранении данных');
                 }
             } catch (error) {
                 alert('Ошибка: ' + error.message);
             } finally {
+                // Всегда переходим на следующий шаг, даже если есть ошибка
+                currentStep++;
+                updateProgress();
+                updateButtons();
+                showStep(currentStep);
                 nextBtn.disabled = false;
                 updateButtons();
             }
@@ -556,7 +556,7 @@
             if (currentStep >= totalSteps) return;
 
             if (currentStep === 4) {
-                submitForm();
+                submitForm(); // Отправляем форму, но всегда переходим на следующий шаг
             } else {
                 currentStep++;
                 updateProgress();

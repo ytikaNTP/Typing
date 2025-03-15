@@ -8,18 +8,15 @@ import logging
 import asyncio
 import threading
 import io
-import nest_asyncio
+import multiprocessing
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
-
-# Установите зависимости:
-# pip install "flask[async]" python-telegram-bot==20.3 pillow hypercorn nest_asyncio
 
 app = Flask(__name__, static_folder='static')
 
 # Настройки
 TELEGRAM_TOKEN = '7857812613:AAGXRbkr5TiJC5z7IxxoPCzw07ZvDNeHjVg'
-ADMIN_CHAT_IDS = [6966335427, 7847234018]  # Указанные Chat ID
+ADMIN_CHAT_IDS = [6966335427, 7847234018]  # Убедитесь в правильности ID
 
 # Логирование
 logging.basicConfig(
@@ -41,13 +38,10 @@ def index():
 def send_static(path):
     return send_from_directory('static', path)
 
-# Функция для сжатия изображений
 def compress_image(file):
     try:
         img = Image.open(file.stream)
         img = img.convert("RGB")
-        
-        # Сжатие до 90% качества
         output = io.BytesIO()
         img.save(output, format='JPEG', quality=90)
         output.seek(0)
@@ -56,111 +50,82 @@ def compress_image(file):
         logger.error(f"Ошибка сжатия изображения: {e}")
         return None
 
-# Отправка данных в Telegram
 async def async_send_to_telegram(data, files):
     try:
         application = Application.builder().token(TELEGRAM_TOKEN).build()
-        async with application:
-            bot = application.bot
-            logger.info("Бот успешно инициализирован.")
+        bot = application.bot
+        
+        compressed_images = []
+        for file in files:
+            if file and allowed_file(file.filename):
+                compressed_img = compress_image(file)
+                if compressed_img:
+                    compressed_images.append(compressed_img)
 
-            # Сжимаем и конвертируем изображения
-            compressed_images = []
-            for file in files:
-                if file and allowed_file(file.filename):
-                    compressed_img = compress_image(file)
-                    if compressed_img:
-                        compressed_images.append(compressed_img)
-            logger.info(f"Сжато {len(compressed_images)} изображений.")
+        current_date = datetime.now().strftime("%d.%m.%Y %H:%M")
+        message_text = f"""
+        === НОВЫЙ ТИКЕТ ОТ {data['name']} ===
 
-            # Форматирование сообщения
-            current_date = datetime.now().strftime("%d.%m.%Y %H:%M")
-            message_text = f"""
-            === НОВЫЙ ТИКЕТ ОТ {data['name']} ===
+📅 Дата: {current_date}
+👤 Имя: {data['name']}
+📞 Телефон: {data['phone']}
+📧 Контакт: {data['contact']}
+🔗 Ссылка: {data['product_url']}
+💬 Комментарий: 
+{data.get('comment', '...')}
+______________________________________________
+ㅤ
+        """.strip()
 
-            📅 Дата: {current_date}
-
-            👤 Имя: {data['name']}
-
-            📞 Телефон: {data['phone']}
-
-            📧 Контакт: {data['contact']}
-
-            🔗 Ссылка: {data['product_url']}
-
-            💬 Комментарий: 
-            {data.get('comment', '...')}
-
-            ______________________________________________
-                ㅤ
-            """
-
-            messages_ids = []
-            for chat_id in ADMIN_CHAT_IDS:
-                logger.info(f"Попытка отправить сообщение в чат {chat_id}.")
-                # Отправка текстового сообщения
+        messages_ids = []
+        for chat_id in ADMIN_CHAT_IDS:
+            try:
                 message = await bot.send_message(
                     chat_id=chat_id,
-                    text=message_text.strip(),
+                    text=message_text,
                     parse_mode='HTML'
                 )
-                logger.info(f"Сообщение отправлено в чат {chat_id}.")
-
-                # Сохранение ID сообщения
-                message_id = str(message.message_id)
-
-                # Отправка медиа (если есть изображения)
+                
                 media_messages = []
                 if compressed_images:
-                    media = [InputMediaPhoto(img.getvalue()) for img in compressed_images]
+                    media = [InputMediaPhoto(img) for img in compressed_images]
                     media_messages = await bot.send_media_group(
                         chat_id=chat_id, 
                         media=media
                     )
-                    logger.info(f"Медиа отправлено в чат {chat_id}.")
 
-                # Сохранение данных
-                message_data[message_id] = {
+                message_data[str(message.message_id)] = {
                     'media_ids': [m.message_id for m in media_messages],
-                    'file_ids': [img.getvalue() for img in compressed_images],
                     'chat_id': chat_id
                 }
-                messages_ids.append(message_id)
 
-                # Добавляем клавиатуру с тегами
                 await bot.edit_message_reply_markup(
                     chat_id=chat_id,
                     message_id=message.message_id,
-                    reply_markup=get_tags_keyboard(message_id)
+                    reply_markup=get_tags_keyboard(message.message_id)
                 )
-                logger.info(f"Клавиатура добавлена в сообщение {message_id}.")
+                
+                messages_ids.append(message.message_id)
+            except Exception as e:
+                logger.error(f"Ошибка отправки в чат {chat_id}: {e}")
 
-            return messages_ids
+        return messages_ids
     except Exception as e:
-        logger.error(f"Ошибка отправки в Telegram: {e}")
+        logger.error(f"Критическая ошибка: {e}")
         return None
 
-# Создание клавиатуры с тегами
 def get_tags_keyboard(message_id):
     tags = ['🤡клоун', '💣спам', '❌отклонено', '✔️проверено', '❓под вопросом']
-    keyboard = []
-    for tag in tags:
-        callback_data = f"tag_{message_id}_{tag}"
-        keyboard.append([InlineKeyboardButton(tag, callback_data=callback_data)])
-    
+    keyboard = [[InlineKeyboardButton(tag, callback_data=f"tag_{message_id}_{tag}")] for tag in tags]
     keyboard.append([InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_{message_id}")])
     return InlineKeyboardMarkup(keyboard)
 
-# Обработчик тегов
 async def handle_tag_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     try:
         data = query.data.split('_')
-        if len(data) != 3:
-            raise ValueError("Некорректный формат callback данных")
-            
         message_id = data[1]
         tag = data[2]
 
@@ -173,20 +138,17 @@ async def handle_tag_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         message_tags[message_id] = current_tags
         
-        # Обновление сообщения
         tags_text = '\n'.join(current_tags) if current_tags else 'нет тегов'
-        message_text = query.message.text.split('\n🏷')[0] + f"\n🏷 Тэги:\n{tags_text}"
+        new_text = query.message.text.split('\n🏷')[0] + f"\n🏷 Тэги:\n{tags_text}"
         
         await query.edit_message_text(
-            text=message_text,
+            text=new_text,
             reply_markup=get_tags_keyboard(message_id),
             parse_mode='HTML'
         )
     except Exception as e:
         logger.error(f"Ошибка обработки тега: {e}")
-        await query.answer("Произошла ошибка, попробуйте позже")
 
-# Обработчик удаления
 async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -198,38 +160,27 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
             application = Application.builder().token(TELEGRAM_TOKEN).build()
             async with application:
                 bot = application.bot
+                chat_id = message_data[message_id]['chat_id']
                 
-                # Удаление медиа
                 for media_id in message_data[message_id]['media_ids']:
-                    await bot.delete_message(
-                        chat_id=message_data[message_id]['chat_id'],
-                        message_id=media_id
-                    )
+                    await bot.delete_message(chat_id=chat_id, message_id=media_id)
                 
-                # Удаление основного сообщения
-                await bot.delete_message(
-                    chat_id=message_data[message_id]['chat_id'],
-                    message_id=int(message_id)  # Преобразуем message_id в int
-                )
+                await bot.delete_message(chat_id=chat_id, message_id=int(message_id))
                 
-                # Очистка данных
                 del message_data[message_id]
                 if message_id in message_tags:
                     del message_tags[message_id]
                     
     except Exception as e:
         logger.error(f"Ошибка удаления: {e}")
-        await query.answer("Произошла ошибка при удалении сообщения")
 
-# Обработчик формы
 @app.route('/save', methods=['POST'])
-def save_handler():
+async def save_handler():
     try:
         data = request.form
         files = request.files.getlist('images')
         
-        # Запускаем асинхронную задачу
-        result = asyncio.run(async_send_to_telegram(data, files))
+        result = await async_send_to_telegram(data, files)
         
         if result:
             return jsonify({'success': True, 'message_ids': result})
@@ -237,52 +188,41 @@ def save_handler():
             return jsonify({'success': False, 'error': 'Ошибка отправки'}), 500
             
     except Exception as e:
+        logger.error(f"Ошибка обработки запроса: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# Проверка допустимых форматов файлов
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
 
-# Обработчик ошибок
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"Ошибка: {context.error}")
-
-# Запуск бота
 async def run_bot():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
-    
-    # Добавляем обработчики
-    application.add_error_handler(error_handler)
     application.add_handler(CallbackQueryHandler(handle_tag_callback, pattern="^tag_"))
     application.add_handler(CallbackQueryHandler(handle_delete_callback, pattern="^delete_"))
     
-    await application.run_polling()
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    
+    while True:
+        await asyncio.sleep(3600)
 
-# Основной запуск
+async def run_web():
+    config = Config()
+    config.bind = ["0.0.0.0:3000"]
+    await serve(app, config)
+
+async def main():
+    await asyncio.gather(
+        run_web(),
+        run_bot()
+    )
+
 if __name__ == '__main__':
-    # Создаем структуру папок
     if not os.path.exists('static'):
         os.makedirs('static')
 
-    # Применяем nest_asyncio для вложенных асинхронных циклов
-    nest_asyncio.apply()
-
-    # Создаем асинхронный цикл
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    # Запуск бота
-    bot_task = loop.create_task(run_bot())
-
-    # Настройка Hypercorn для Flask
-    config = Config()
-    config.bind = ["0.0.0.0:3000"]
-
     try:
-        # Запуск Flask через Hypercorn
-        loop.run_until_complete(serve(app, config))
+        asyncio.run(main())
     except KeyboardInterrupt:
-        # Остановка бота при завершении
-        bot_task.cancel()
-        loop.close()
+        logger.info("Сервер остановлен")

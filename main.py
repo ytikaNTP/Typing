@@ -8,6 +8,8 @@ import os
 import logging
 import asyncio
 import io
+from hypercorn.config import Config
+from hypercorn.asyncio import serve
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
@@ -162,10 +164,12 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
                         message_id=media_id
                     )
                 
+                # Исправленная секция с закрывающей скобкой
                 await bot.delete_message(
                     chat_id=data['chat_id'],
                     message_id=int(message_id)
-                
+                )
+
                 del message_data[message_id]
                 if message_id in message_tags:
                     del message_tags[message_id]

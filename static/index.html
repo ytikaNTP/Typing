@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GreenBottle - Кэшбек программа</title>
+    <style>
+        :root {
+            --primary: #2ecc71;
+            --secondary: #27ae60;
+            --background: #f8fff9;
+            --text: #2c3e50;
+            --error: #e74c3c;
+        }
+
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--background);
+            padding: 2rem 1rem;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 2.5rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 40px rgba(46, 204, 113, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .decorative-line {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 8px;
+            background: linear-gradient(to bottom, var(--primary), var(--secondary));
+        }
+
+        .step {
+            display: none;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            min-height: 400px;
+            padding: 1rem 0;
+        }
+
+        .step.active {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        h1 {
+            color: var(--text);
+            text-align: center;
+            margin-bottom: 2.5rem;
+            font-size: 2.4rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .step-number {
+            background: var(--primary);
+            color: white;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
+        }
+
+        .step-title {
+            font-size: 1.6rem;
+            color: var(--text);
+        }
+
+        .step-content {
+            font-size: 1.1rem;
+            line-height: 1.8;
+            color: #566573;
+            margin: 2rem 0;
+            padding-left: 1rem;
+            border-left: 3px solid var(--primary);
+        }
+
+        .form-group {
+            margin-bottom: 1.8rem;
+            position: relative;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.8rem;
+            color: var(--text);
+            font-weight: 500;
+            font-size: 1rem;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid #e8f5e9;
+            border-radius: 0.8rem;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: #f8fff9;
+        }
+
+        input:focus, textarea:focus {
+            border-color: var(--primary);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(46, 204, 113, 0.2);
+            background: white;
+        }
+
+        .input-hint {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            margin-top: 0.5rem;
+            display: block;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 1rem 2.5rem;
+            border-radius: 0.8rem;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        button:hover {
+            background: var(--secondary);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(46, 204, 113, 0.3);
+        }
+
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .steps-nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2.5rem;
+            gap: 1.5rem;
+        }
+
+        .progress-container {
+            height: 6px;
+            background: #ecf0f1;
+            margin: 2rem 0;
+            border-radius: 3px;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            transition: width 0.5s ease;
+            border-radius: 3px;
+        }
+
+        .success-message {
+            text-align: center;
+            padding: 2rem;
+            background: #e8f5e9;
+            border-radius: 1rem;
+            margin-top: 2rem;
+        }
+
+        .loader {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .upload-container {
+            border: 2px dashed #e8f5e9;
+            border-radius: 0.8rem;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+
+        .upload-button {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            padding: 0.8rem 1.5rem;
+            border-radius: 0.6rem;
+            cursor: pointer;
+            transition: 0.3s;
+            margin-bottom: 1rem;
+        }
+
+        .upload-button:hover {
+            background: var(--secondary);
+        }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .preview-item {
+            position: relative;
+            aspect-ratio: 1;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            background: #f0f0f0;
+        }
+
+        .preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            cursor: zoom-in;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: var(--error);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            transition: 0.3s;
+        }
+
+        .remove-btn:hover {
+            background: #c0392b;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1.5rem;
+                border-radius: 1rem;
+            }
+
+            h1 {
+                font-size: 1.8rem;
+                flex-direction: column;
+            }
+
+            .step-number {
+                width: 40px;
+                height: 40px;
+            }
+
+            .step-title {
+                font-size: 1.3rem;
+            }
+
+            button {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .steps-nav {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="decorative-line"></div>
+        <h1>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            Кэшбек программа GreenBottle
+        </h1>
+
+        <div class="progress-container">
+            <div class="progress-bar" id="progress"></div>
+        </div>
+
+        <!-- Шаг 1 -->
+        <div class="step active" data-step="1">
+            <div class="step-header">
+                <div class="step-number">1</div>
+                <h3 class="step-title">Купить товар</h3>
+            </div>
+            <div class="step-content">
+                <p>1. Выберите товар в нашем магазине</p>
+                <p>2. Совершите покупку</p>
+                <p>3. Сохраните скрин товара и личного кабинета</p>
+            </div>
+        </div>
+
+        <!-- Шаг 2 -->
+        <div class="step" data-step="2">
+            <div class="step-header">
+                <div class="step-number">2</div>
+                <h3 class="step-title">Написать отзыв</h3>
+            </div>
+            <div class="step-content">
+                <p>1. Сделайте 2-3 фотографии товара</p>
+                <p>2. Напишите отзыв с 5 звёздами</p>
+                <p>3. Сохраните скрин отзыва</p>
+            </div>
+        </div>
+
+        <!-- Шаг 3 -->
+        <div class="step" data-step="3">
+            <div class="step-header">
+                <div class="step-number">3</div>
+                <h3 class="step-title">Ссылка на товар</h3>
+            </div>
+            <div class="step-content">
+                <p>1. Перейдите на страницу товара</p>
+                <p>2. Скопируйте URL из адресной строки</p>
+                <p>3. Вставьте ссылку в следующем шаге</p>
+            </div>
+        </div>
+
+        <!-- Шаг 4 -->
+        <div class="step" data-step="4">
+            <div class="step-header">
+                <div class="step-number">4</div>
+                <h3 class="step-title">Заполните анкету</h3>
+            </div>
+            <form id="cashbackForm">
+                <div class="form-group">
+                    <label>Ссылка на товар:</label>
+                    <input type="url" name="product_url" required placeholder="https://example.com/product">
+                    <span class="input-hint">Скопируйте адрес из браузера</span>
+                </div>
+                
+                <div class="form-group">
+                    <label>Ваше имя:</label>
+                    <input type="text" name="name" required placeholder="Иван Иванов">
+                    <span class="input-hint">Как к вам обращаться</span>
+                </div>
+
+                <div class="form-group">
+                    <label>Номер телефона:</label>
+                    <input type="tel" name="phone" pattern="[\+]\d{1}\s\d{3}\s\d{3}\s\d{4}" 
+                           required placeholder="+7 999 123 4567">
+                    <span class="input-hint">Формат: +7 XXX XXX XXXX</span>
+                </div>
+
+                <div class="form-group">
+                    <label>Контакт для связи:</label>
+                    <input type="text" name="contact" required placeholder="example@mail.com или @username">
+                    <span class="input-hint">Email или аккаунт в соцсети</span>
+                </div>
+
+                <div class="form-group">
+                    <label>Дополнительные комментарии:</label>
+                    <textarea name="comment" rows="4" placeholder="Ваши пожелания или примечания..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Загрузите до 7 изображений:</label>
+                    <div class="upload-container">
+                        <input type="file" id="imageUpload" multiple accept="image/*" style="display: none;">
+                        <label for="imageUpload" class="upload-button">
+                            <span>📁 Выбрать файлы</span>
+                        </label>
+                        <div class="preview-grid" id="imagePreview"></div>
+                    </div>
+                    <span class="input-hint">Максимум 7 изображений (JPG, PNG)</span>
+                </div>
+            </form>
+        </div>
+
+        <!-- Шаг 5 -->
+        <div class="step" data-step="5">
+            <div class="step-header">
+                <div class="step-number">5</div>
+                <h3 class="step-title">Проверка данных</h3>
+            </div>
+            <div class="step-content">
+                <div class="success-message">
+                    <h3>✅ Заявка готова!</h3>
+                    <p>Ожидайте подтверждения в течение 14 рабочих дней</p>
+                    <p>Мы свяжемся с вами по указанным контактам</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="steps-nav">
+            <button type="button" onclick="prevStep()" id="prevBtn" disabled>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M15 18l-6-6 6-6"/>
+                </svg>
+                Назад
+            </button>
+            <button type="button" onclick="nextStep()" id="nextBtn">
+                Вперед
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 18l6-6-6-6"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        const totalSteps = 5;
+        let uploadedFiles = [];
+
+        function updateProgress() {
+            const progress = (currentStep - 1) / (totalSteps - 1) * 100;
+            document.getElementById('progress').style.width = `${progress}%`;
+        }
+
+        function updateButtons() {
+            document.getElementById('prevBtn').disabled = currentStep === 1;
+            document.getElementById('nextBtn').innerHTML = currentStep === totalSteps 
+                ? 'Отправить заявку <span class="loader"></span>'
+                : 'Вперед <svg width="20" height="20" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>';
+        }
+
+        function showStep(step) {
+            document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+            document.querySelector(`[data-step="${step}"]`).classList.add('active');
+        }
+
+        // Загрузка файлов
+        document.getElementById('imageUpload').addEventListener('change', function(e) {
+            uploadedFiles = Array.from(e.target.files).slice(0, 7);
+            const preview = document.getElementById('imagePreview');
+            preview.innerHTML = '';
+
+            uploadedFiles.forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const previewItem = document.createElement('div');
+                    previewItem.className = 'preview-item';
+                    previewItem.innerHTML = `
+                        <img src="${e.target.result}" alt="Preview ${index + 1}">
+                        <button class="remove-btn" onclick="removeImage(${index})">×</button>
+                    `;
+                    preview.appendChild(previewItem);
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+
+        function removeImage(index) {
+            uploadedFiles.splice(index, 1);
+            const preview = document.getElementById('imagePreview');
+            preview.innerHTML = '';
+
+            uploadedFiles.forEach((file, i) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const previewItem = document.createElement('div');
+                    previewItem.className = 'preview-item';
+                    previewItem.innerHTML = `
+                        <img src="${e.target.result}" alt="Preview ${i + 1}">
+                        <button class="remove-btn" onclick="removeImage(${i})">×</button>
+                    `;
+                    preview.appendChild(previewItem);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function submitForm() {
+            const nextBtn = document.getElementById('nextBtn');
+            nextBtn.innerHTML = 'Отправка... <span class="loader"></span>';
+            nextBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('product_url', document.querySelector('input[name="product_url"]').value);
+                formData.append('name', document.querySelector('input[name="name"]').value);
+                formData.append('phone', document.querySelector('input[name="phone"]').value);
+                formData.append('contact', document.querySelector('input[name="contact"]').value);
+                formData.append('comment', document.querySelector('textarea[name="comment"]').value);
+
+                uploadedFiles.forEach((file, index) => {
+                    formData.append('images', file);
+                });
+
+                const response = await fetch('http://localhost:3000/save', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error('Ошибка сервера');
+                const result = await response.json();
+
+                if (result.success) {
+                    currentStep++;
+                    updateProgress();
+                    updateButtons();
+                    showStep(currentStep);
+                } else {
+                    alert(result.error || 'Ошибка при сохранении данных');
+                }
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            } finally {
+                nextBtn.disabled = false;
+                updateButtons();
+            }
+        }
+
+        function nextStep() {
+            if (currentStep >= totalSteps) return;
+
+            if (currentStep === 4) {
+                submitForm();
+            } else {
+                currentStep++;
+                updateProgress();
+                updateButtons();
+                showStep(currentStep);
+            }
+        }
+
+        function prevStep() {
+            if (currentStep > 1) {
+                currentStep--;
+                updateProgress();
+                updateButtons();
+                showStep(currentStep);
+            }
+        }
+
+        // Инициализация
+        updateProgress();
+        updateButtons();
+    </script>
+</body>
+</html>

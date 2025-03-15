@@ -8,9 +8,12 @@ import logging
 import asyncio
 import threading
 import io
+import nest_asyncio
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
 
 # Установите зависимости:
-# pip install "flask[async]" python-telegram-bot==20.3 pillow
+# pip install "flask[async]" python-telegram-bot==20.3 pillow hypercorn nest_asyncio
 
 app = Flask(__name__, static_folder='static')
 
@@ -241,10 +244,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Ошибка: {context.error}")
 
 # Запуск бота
-def run_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
+async def run_bot():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # Добавляем обработчики
@@ -252,25 +252,32 @@ def run_bot():
     application.add_handler(CallbackQueryHandler(handle_tag_callback, pattern="^tag_"))
     application.add_handler(CallbackQueryHandler(handle_delete_callback, pattern="^delete_"))
     
-    try:
-        loop.run_until_complete(application.run_polling())
-    finally:
-        loop.close()
+    await application.run_polling()
 
 # Основной запуск
 if __name__ == '__main__':
     # Создаем структуру папок
     if not os.path.exists('static'):
         os.makedirs('static')
-    
-    # Запускаем бот в отдельном потоке
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    # Запускаем Flask сервер
-    app.run(
-        host='0.0.0.0',  # Для работы на Ubuntu
-        port=3000,
-        debug=False,
-        use_reloader=False
-    )
+
+    # Применяем nest_asyncio для вложенных асинхронных циклов
+    nest_asyncio.apply()
+
+    # Создаем асинхронный цикл
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Запуск бота
+    bot_task = loop.create_task(run_bot())
+
+    # Настройка Hypercorn для Flask
+    config = Config()
+    config.bind = ["0.0.0.0:3000"]
+
+    try:
+        # Запуск Flask через Hypercorn
+        loop.run_until_complete(serve(app, config))
+    except KeyboardInterrupt:
+        # Остановка бота при завершении
+        bot_task.cancel()
+        loop.close()

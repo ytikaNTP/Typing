@@ -12,7 +12,7 @@ from hypercorn.config import Config
 from hypercorn.asyncio import serve
 
 app = Flask(__name__, static_folder='static')
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})  # Явное разрешение CORS
 
 TELEGRAM_TOKEN = '7857812613:AAGXRbkr5TiJC5z7IxxoPCzw07ZvDNeHjVg'
 ADMIN_CHAT_IDS = [6966335427, 7847234018]
@@ -34,14 +34,12 @@ def index():
 def send_static(path):
     return send_from_directory('static', path)
 
-@app.before_request
-def log_request():
-    logger.info(f"\n=== New Request ===")
-    logger.info(f"Method: {request.method}")
-    logger.info(f"URL: {request.url}")
-    logger.info(f"Headers: {dict(request.headers)}")
-    logger.info(f"Form data: {request.form}")
-    logger.info(f"Files: {list(request.files.keys())}")
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    return response
 
 def compress_image(file):
     try:
@@ -82,12 +80,14 @@ async def async_send_to_telegram(data, files):
         messages_ids = []
         for chat_id in ADMIN_CHAT_IDS:
             try:
+                # Отправка текста
                 message = await bot.send_message(
                     chat_id=chat_id,
                     text=message_text,
                     parse_mode='HTML'
                 )
                 
+                # Отправка медиа
                 media_messages = []
                 if compressed_images:
                     media = [InputMediaPhoto(img) for img in compressed_images]
@@ -96,24 +96,26 @@ async def async_send_to_telegram(data, files):
                         media=media
                     )
 
+                # Сохранение метаданных
                 message_data[str(message.message_id)] = {
                     'media_ids': [m.message_id for m in media_messages],
                     'chat_id': chat_id
                 }
 
+                # Добавление кнопок
                 await bot.edit_message_reply_markup(
                     chat_id=chat_id,
                     message_id=message.message_id,
                     reply_markup=get_tags_keyboard(message.message_id)
-                )
-
+                
                 messages_ids.append(message.message_id)
+                
             except Exception as e:
-                logger.error(f"Chat {chat_id} error: {e}")
+                logger.error(f"Error in chat {chat_id}: {str(e)}")
 
         return messages_ids
     except Exception as e:
-        logger.error(f"Critical error: {e}")
+        logger.error(f"Critical error: {str(e)}")
         return None
 
 def get_tags_keyboard(message_id):
@@ -145,7 +147,7 @@ async def handle_tag_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode='HTML'
         )
     except Exception as e:
-        logger.error(f"Tag error: {e}")
+        logger.error(f"Tag error: {str(e)}")
 
 async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -158,13 +160,14 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
                 bot = app.bot
                 data = message_data[message_id]
                 
+                # Удаление медиа
                 for media_id in data['media_ids']:
                     await bot.delete_message(
                         chat_id=data['chat_id'],
                         message_id=media_id
                     )
                 
-                # Исправленная секция с закрывающей скобкой
+                # Удаление основного сообщения
                 await bot.delete_message(
                     chat_id=data['chat_id'],
                     message_id=int(message_id)
@@ -175,27 +178,44 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
                     del message_tags[message_id]
                     
     except Exception as e:
-        logger.error(f"Delete error: {e}")
+        logger.error(f"Delete error: {str(e)}")
 
-@app.route('/save', methods=['POST'])
+@app.route('/save', methods=['POST', 'OPTIONS'])
 async def save_handler():
     try:
+        if request.method == 'OPTIONS':
+            return jsonify({'status': 'ok'}), 200
+            
         form_data = request.form
         files = request.files.getlist('images')
         
-        if not all(form_data.get(field) for field in ['name', 'phone', 'contact', 'product_url']):
-            return jsonify({'success': False, 'error': 'Заполните все обязательные поля'}), 400
+        # Валидация полей
+        required_fields = ['name', 'phone', 'contact', 'product_url']
+        if not all(form_data.get(field) for field in required_fields):
+            return jsonify({
+                'success': False,
+                'error': 'Все обязательные поля должны быть заполнены'
+            }), 400
         
+        # Логирование полученных данных
+        logger.info(f"Received data: {form_data}")
+        logger.info(f"Received files count: {len(files)}")
+
         result = await async_send_to_telegram(form_data, files)
         
-        return jsonify({
-            'success': bool(result),
-            'message_ids': result or [],
-            'error': 'Ошибка отправки' if not result else None
-        }), 200 if result else 500
-        
+        if result:
+            return jsonify({
+                'success': True,
+                'message': 'Сообщение успешно отправлено'
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Ошибка при отправке в Telegram'
+            }), 500
+            
     except Exception as e:
-        logger.error(f"Handler error: {e}")
+        logger.error(f"Server error: {str(e)}")
         return jsonify({
             'success': False,
             'error': 'Внутренняя ошибка сервера'
@@ -214,7 +234,7 @@ async def run_bot():
     await application.start()
     await application.updater.start_polling()
     
-    logger.info("Бот запущен")
+    logger.info("Telegram бот запущен")
     while True:
         await asyncio.sleep(3600)
 

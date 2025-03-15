@@ -12,7 +12,7 @@ from hypercorn.config import Config
 from hypercorn.asyncio import serve
 
 app = Flask(__name__, static_folder='static')
-CORS(app, resources={r"/*": {"origins": "*"}})  # Явное разрешение CORS
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 TELEGRAM_TOKEN = '7857812613:AAGXRbkr5TiJC5z7IxxoPCzw07ZvDNeHjVg'
 ADMIN_CHAT_IDS = [6966335427, 7847234018]
@@ -37,8 +37,8 @@ def send_static(path):
 @app.after_request
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-    response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     return response
 
 def compress_image(file):
@@ -62,8 +62,9 @@ async def async_send_to_telegram(data, files):
         compressed_images = []
         for file in files:
             if file and allowed_file(file.filename):
-                if compressed := compress_image(file):
-                    compressed_images.append(compressed)
+                compressed_img = compress_image(file)
+                if compressed_img:
+                    compressed_images.append(compressed_img)
 
         message_text = f"""
         🚨 НОВЫЙ ЗАКАЗ ОТ {data['name']} 🚨
@@ -80,14 +81,14 @@ async def async_send_to_telegram(data, files):
         messages_ids = []
         for chat_id in ADMIN_CHAT_IDS:
             try:
-                # Отправка текста
+                # Отправка текстового сообщения
                 message = await bot.send_message(
                     chat_id=chat_id,
                     text=message_text,
                     parse_mode='HTML'
                 )
                 
-                # Отправка медиа
+                # Отправка изображений
                 media_messages = []
                 if compressed_images:
                     media = [InputMediaPhoto(img) for img in compressed_images]
@@ -96,7 +97,7 @@ async def async_send_to_telegram(data, files):
                         media=media
                     )
 
-                # Сохранение метаданных
+                # Сохранение информации о сообщении
                 message_data[str(message.message_id)] = {
                     'media_ids': [m.message_id for m in media_messages],
                     'chat_id': chat_id
@@ -107,15 +108,15 @@ async def async_send_to_telegram(data, files):
                     chat_id=chat_id,
                     message_id=message.message_id,
                     reply_markup=get_tags_keyboard(message.message_id)
-                
+                )
+
                 messages_ids.append(message.message_id)
-                
             except Exception as e:
-                logger.error(f"Error in chat {chat_id}: {str(e)}")
+                logger.error(f"Ошибка в чате {chat_id}: {str(e)}")
 
         return messages_ids
     except Exception as e:
-        logger.error(f"Critical error: {str(e)}")
+        logger.error(f"Критическая ошибка: {str(e)}")
         return None
 
 def get_tags_keyboard(message_id):
@@ -147,7 +148,7 @@ async def handle_tag_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode='HTML'
         )
     except Exception as e:
-        logger.error(f"Tag error: {str(e)}")
+        logger.error(f"Ошибка обработки тега: {str(e)}")
 
 async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -160,14 +161,14 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
                 bot = app.bot
                 data = message_data[message_id]
                 
-                # Удаление медиа
+                # Удаление медиафайлов
                 for media_id in data['media_ids']:
                     await bot.delete_message(
                         chat_id=data['chat_id'],
                         message_id=media_id
                     )
                 
-                # Удаление основного сообщения
+                # Удаление основного сообщения (исправленная секция)
                 await bot.delete_message(
                     chat_id=data['chat_id'],
                     message_id=int(message_id)
@@ -178,7 +179,7 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
                     del message_tags[message_id]
                     
     except Exception as e:
-        logger.error(f"Delete error: {str(e)}")
+        logger.error(f"Ошибка удаления: {str(e)}")
 
 @app.route('/save', methods=['POST', 'OPTIONS'])
 async def save_handler():
@@ -189,7 +190,7 @@ async def save_handler():
         form_data = request.form
         files = request.files.getlist('images')
         
-        # Валидация полей
+        # Валидация обязательных полей
         required_fields = ['name', 'phone', 'contact', 'product_url']
         if not all(form_data.get(field) for field in required_fields):
             return jsonify({
@@ -197,25 +198,16 @@ async def save_handler():
                 'error': 'Все обязательные поля должны быть заполнены'
             }), 400
         
-        # Логирование полученных данных
-        logger.info(f"Received data: {form_data}")
-        logger.info(f"Received files count: {len(files)}")
-
         result = await async_send_to_telegram(form_data, files)
         
-        if result:
-            return jsonify({
-                'success': True,
-                'message': 'Сообщение успешно отправлено'
-            }), 200
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Ошибка при отправке в Telegram'
-            }), 500
-            
+        return jsonify({
+            'success': bool(result),
+            'message': 'Сообщение успешно отправлено' if result else 'Ошибка отправки',
+            'error': None if result else 'Ошибка при отправке в Telegram'
+        }), 200 if result else 500
+        
     except Exception as e:
-        logger.error(f"Server error: {str(e)}")
+        logger.error(f"Ошибка сервера: {str(e)}")
         return jsonify({
             'success': False,
             'error': 'Внутренняя ошибка сервера'

@@ -62,7 +62,8 @@ async def async_send_to_telegram(data, files):
         application = Application.builder().token(TELEGRAM_TOKEN).build()
         async with application:
             bot = application.bot
-            
+            logger.info("Бот успешно инициализирован.")
+
             # Сжимаем и конвертируем изображения
             compressed_images = []
             for file in files:
@@ -70,38 +71,40 @@ async def async_send_to_telegram(data, files):
                     compressed_img = compress_image(file)
                     if compressed_img:
                         compressed_images.append(compressed_img)
+            logger.info(f"Сжато {len(compressed_images)} изображений.")
 
             # Форматирование сообщения
             current_date = datetime.now().strftime("%d.%m.%Y %H:%M")
             message_text = f"""
             === НОВЫЙ ТИКЕТ ОТ {data['name']} ===
 
-📅 Дата: {current_date}
+            📅 Дата: {current_date}
 
-👤 Имя: {data['name']}
+            👤 Имя: {data['name']}
 
-📞 Телефон: {data['phone']}
+            📞 Телефон: {data['phone']}
 
-📧 Контакт: {data['contact']}
+            📧 Контакт: {data['contact']}
 
-🔗 Ссылка: {data['product_url']}
+            🔗 Ссылка: {data['product_url']}
 
-💬 Комментарий: 
-{data.get('comment', '...')}
+            💬 Комментарий: 
+            {data.get('comment', '...')}
 
-______________________________________________
-    ㅤ
-            
+            ______________________________________________
+                ㅤ
             """
 
             messages_ids = []
             for chat_id in ADMIN_CHAT_IDS:
+                logger.info(f"Попытка отправить сообщение в чат {chat_id}.")
                 # Отправка текстового сообщения
                 message = await bot.send_message(
                     chat_id=chat_id,
                     text=message_text.strip(),
                     parse_mode='HTML'
                 )
+                logger.info(f"Сообщение отправлено в чат {chat_id}.")
 
                 # Сохранение ID сообщения
                 message_id = str(message.message_id)
@@ -114,6 +117,7 @@ ______________________________________________
                         chat_id=chat_id, 
                         media=media
                     )
+                    logger.info(f"Медиа отправлено в чат {chat_id}.")
 
                 # Сохранение данных
                 message_data[message_id] = {
@@ -129,6 +133,7 @@ ______________________________________________
                     message_id=message.message_id,
                     reply_markup=get_tags_keyboard(message_id)
                 )
+                logger.info(f"Клавиатура добавлена в сообщение {message_id}.")
 
             return messages_ids
     except Exception as e:

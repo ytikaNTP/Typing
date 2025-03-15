@@ -38,7 +38,7 @@ def send_static(path):
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     return response
 
 def compress_image(file):
@@ -107,6 +107,8 @@ async def async_send_to_telegram(data, files):
                 )
 
                 messages_ids.append(message.message_id)
+                logger.info(f"Сообщение отправлено в чат {chat_id}")
+
             except Exception as e:
                 logger.error(f"Ошибка в чате {chat_id}: {str(e)}")
 
@@ -164,7 +166,7 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
                         message_id=media_id
                     )
                 
-                # Удаление основного сообщения
+                # Удаление основного сообщения (исправленная секция)
                 await bot.delete_message(
                     chat_id=data['chat_id'],
                     message_id=int(message_id)
@@ -186,25 +188,29 @@ async def save_handler():
         form_data = request.form
         files = request.files.getlist('images')
         
-        required_fields = ['name', 'phone', 'contact', 'product_url']
-        if not all(form_data.get(field) for field in required_fields):
+        logger.info(f"Получен запрос: {form_data}")
+        
+        if not all(form_data.get(field) for field in ['name', 'phone', 'contact', 'product_url']):
             return jsonify({
                 'success': False,
-                'error': 'Заполните все обязательные поля'
+                'error': 'Все обязательные поля должны быть заполнены'
             }), 400
-        
-        logger.info(f"Получен запрос от: {form_data.get('name')}")
         
         result = await async_send_to_telegram(form_data, files)
         
-        return jsonify({
-            'success': bool(result),
-            'message': 'Тикет успешно создан!',
-            'error': None
-        }), 200
-        
+        if result:
+            return jsonify({
+                'success': True,
+                'message': 'Сообщение успешно отправлено!'
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Ошибка при отправке в Telegram'
+            }), 500
+            
     except Exception as e:
-        logger.error(f"Ошибка обработки запроса: {str(e)}")
+        logger.error(f"Ошибка сервера: {str(e)}")
         return jsonify({
             'success': False,
             'error': 'Внутренняя ошибка сервера'
@@ -223,7 +229,7 @@ async def run_bot():
     await application.start()
     await application.updater.start_polling()
     
-    logger.info("🤖 Telegram бот запущен")
+    logger.info("Telegram бот запущен")
     while True:
         await asyncio.sleep(3600)
 
@@ -231,7 +237,7 @@ async def run_web():
     config = Config()
     config.bind = ["0.0.0.0:3000"]
     await serve(app, config)
-    logger.info("🌐 Веб-сервер запущен на порту 3000")
+    logger.info("Веб-сервер запущен на порту 3000")
 
 async def main():
     await asyncio.gather(
@@ -246,4 +252,4 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("🚫 Сервер остановлен")
+        logger.info("Сервер остановлен")
